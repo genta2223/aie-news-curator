@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.44.10",
     "feedparser>=6.0.14",
+    "google-genai>=3.6.1",
     "pydantic>=2.14.4",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.4",

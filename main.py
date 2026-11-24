@@ -35,7 +35,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--hours", type=int, default=48, help="収集対象の過去時間 (デフォルト: 48)")
     run_parser.add_argument("--top-k", type=int, default=5, help="配信する上位記事数 (デフォルト: 5)")
-    run_parser.add_argument("--model", type=str, default=None, help="BedrockモデルIDを上書き")
+    run_parser.add_argument(
+        "--provider",
+        choices=["gemini", "bedrock", "mock"],
+        default=None,
+        help="LLMプロバイダ (未指定時は環境変数から自動判定)",
+    )
+    run_parser.add_argument("--model", type=str, default=None, help="モデルIDを上書き")
     run_parser.add_argument("--mock", action="store_true", help="LLMをモックモードで実行")
     run_parser.add_argument(
         "--publish",
@@ -63,10 +69,16 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--hours", type=int, default=48, help="収集対象の過去時間")
     eval_parser.add_argument("--limit", type=int, default=5, help="比較評価する記事数 (デフォルト: 5)")
     eval_parser.add_argument(
+        "--provider",
+        choices=["gemini", "bedrock", "mock"],
+        default=None,
+        help="比較評価に使用するLLMプロバイダ",
+    )
+    eval_parser.add_argument(
         "--models",
         nargs="+",
-        default=["amazon.nova-micro-v1:0", "amazon.nova-lite-v1:0"],
-        help="比較対象のBedrockモデルID一覧",
+        default=None,
+        help="比較対象のモデルID一覧 (未指定時はプロバイダのデフォルト比較セットを使用)",
     )
     eval_parser.add_argument("--mock", action="store_true", help="モックモードで比較評価を実行")
 
@@ -86,7 +98,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         # Curate up to max(top_k * 2, 10) recent candidates to keep latency/cost predictable
         candidates = articles[: max(args.top_k * 2, 10)]
-        curated = curate_articles(candidates, model_id=args.model, mock=args.mock)
+        curated = curate_articles(
+            candidates,
+            model_id=args.model,
+            mock=args.mock,
+            provider=args.provider,
+        )
         send_slack_digest(curated, publish=args.publish, top_k=args.top_k)
         target = "受講生配信用チャンネル" if args.publish else "運営確認用チャンネル (#news-review)"
         print(f"Posted top {min(len(curated), args.top_k)} articles to {target}.")
@@ -112,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             models=args.models,
             limit=args.limit,
             mock=args.mock,
+            provider=args.provider,
         )
         print(format_evaluation_report(report))
         return 0

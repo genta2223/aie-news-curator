@@ -25,8 +25,10 @@ from src.curator import (
     curate_articles,
     load_lectures_config,
     parse_converse_response,
+    resolve_provider,
 )
 from src.deduplicator import RelatedArticleRef, cluster_similar_articles
+from src.evaluator import get_default_compare_models
 from src.notifier import build_slack_blocks
 
 
@@ -255,3 +257,74 @@ def test_load_enriched_lectures_and_external_detail_json(tmp_path):
     prompt = build_curation_prompt(_make_article(), enriched)
     assert "RRF統合" in prompt
     assert "Hybrid RAG構築演習" in prompt
+
+
+def test_resolve_provider_auto_and_explicit(monkeypatch):
+    monkeypatch.delenv("USE_MOCK_LLM", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+
+    assert resolve_provider() == "bedrock"
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key")
+    assert resolve_provider() == "gemini"
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "dummy-aws")
+    assert resolve_provider() == "bedrock"
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    assert resolve_provider() == "gemini"
+    assert resolve_provider(mock=True) == "mock"
+
+
+def test_curate_article_gemini_structured_output_and_retry(monkeypatch):
+    monkeypatch.delenv("USE_MOCK_LLM", raising=False)
+    expected = CurationResult(
+        relevance_score=5,
+        related_lecture="Day5: RAG・ハイブリッド検索・Tree/GraphRAG",
+        summary_ja="Geminiによるテスト要約です。",
+        learning_point="ハイブリッド検索の重要性を学べます。",
+        discussion_prompt="実務での適用箇所はどこですか？",
+    )
+    fake_response = SimpleNamespace(
+        parsed=expected,
+        text=expected.model_dump_json(),
+        usage_metadata=SimpleNamespace(prompt_token_count=120, candidates_token_count=45),
+    )
+
+    call_count = 0
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+            assert model == "gemini-3.5-flash-lite"
+            assert config.response_schema is CurationResult
+            assert getattr(config, "temperature", None) is None
+            return fake_response
+
+    fake_client = SimpleNamespace(models=FakeModels())
+    with patch("src.curator.time.sleep") as mock_sleep:
+        result = curate_article(
+            _make_article(),
+            provider="gemini",
+            gemini_client=fake_client,
+        )
+
+    assert call_count == 2
+    mock_sleep.assert_called_once()
+    assert result.model_id == "gemini-3.5-flash-lite"
+    assert result.input_tokens == 120
+    assert result.output_tokens == 45
+    assert result.curation.relevance_score == 5
+
+
+def test_evaluator_default_models_for_gemini():
+    assert get_default_compare_models(provider="gemini") == [
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash",
+    ]
+    assert get_default_compare_models(provider="bedrock") == [
+        "amazon.nova-micro-v1:0",
+        "amazon.nova-lite-v1:0",
+    ]

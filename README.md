@@ -1,6 +1,6 @@
 # AIE受講生向けニュース共有ツール（PJT03）
 
-AIエンジニア育成講座（AIE）の受講生向けに、最新のAI技術ニュース・論文をRSSから自動収集し、講義カリキュラム（Day1〜Day7）との関連度をAmazon Bedrock（Nova Lite）で判定・日本語要約したうえでSlackへ定期配信するPythonアプリケーションです。
+AIエンジニア育成講座（AIE）の受講生向けに、最新のAI技術ニュース・論文をRSSから自動収集し、講義カリキュラム（Day1〜Day7）との関連度を Google Gemini API（`gemini-3.5-flash-lite`）または Amazon Bedrock（`amazon.nova-lite-v1:0`）で判定・日本語要約したうえでSlackへ定期配信するPythonアプリケーションです。
 
 ---
 
@@ -15,7 +15,7 @@ AIエンジニア育成講座（AIE）の受講生向けに、最新のAI技術�
 ### ② 実装した機能の説明
 - **RSS収集・フィルタリング (`src/collector.py`, `config/sources.yaml`)**: `feedparser` を用いて過去48時間以内の記事メタデータ（タイトル・URL・公開日時・RSS概要）を取得し、広告・PR等の除外キーワードフィルタとURL重複排除を行います。
 - **重複・類似記事のトピック統合 (`src/deduplicator.py`, 任意要件 O-4)**: タイトルおよびRSS概要文の単語・文字N-gram（CJK 2-gram含む）類似度判定により、同一ニュースを扱う複数メディアの記事を1つの代表トピックに統合し、「あわせて読みたい関連記事」として複数ソースのリンクをまとめて配信します。
-- **講義資料連携 & Bedrock構造化キュレーション (`src/curator.py`, `config/lectures.yaml`)**: Day1〜Day7の「要点・技術用語・実社会での応用例」に加え、外部講義資料JSON（`data/lectures_detail.json`、存在時のみ自動読み込み）をコンテキストへ統合し、Amazon Bedrock `converse` API（`toolConfig` による構造化出力、デフォルト `amazon.nova-lite-v1:0`）で `CurationResult`（関連度1〜5、関連講義回、150文字程度の日本語要約、学びのポイント、議論の問いかけ）を生成します。ローカル検証用の `--mock` モードも搭載しています。
+- **講義資料連携 & マルチプロバイダ構造化キュレーション (`src/curator.py`, `config/lectures.yaml`)**: Day1〜Day7の「要点・技術用語・実社会での応用例」に加え、外部講義資料JSON（`data/lectures_detail.json`、存在時のみ自動読み込み）をコンテキストへ統合し、環境変数 `LLM_PROVIDER`（`gemini` / `bedrock` / `mock`）により **Google Gemini API**（`google-genai` SDK・`response_schema=CurationResult`・`gemini-3.5-flash-lite`）と **Amazon Bedrock**（`converse` API・`amazon.nova-lite-v1:0`）を切り替えて構造化出力を生成します。ローカル検証用の `--mock` モードも搭載しています。
 - **安全設計のSlack Block Kit配信 (`src/notifier.py`)**: 関連度上位5件をSlack Block Kit形式に整形し、デフォルトでは運営確認用チャンネル（`SLACK_REVIEW_WEBHOOK_URL`）へ下書き投稿すると同時に `data/last_digest.json` へ保存します。`publish` コマンド実行時のみ受講生向けチャンネル（`SLACK_WEBHOOK_URL`）へ本配信します。
 - **モデル・プロンプト評価 (`src/evaluator.py`)**: 固定記事セットを `data/eval_articles.json` に保存し、除外フィルタ削減率やモデル間（`amazon.nova-micro-v1:0` vs `amazon.nova-lite-v1:0`）の関連講義一致率・スコア分布・トークン数・処理時間を比較レポート出力します。
 
@@ -24,10 +24,20 @@ AIエンジニア育成講座（AIE）の受講生向けに、最新のAI技術�
 ```bash
 uv sync
 ```
-`.env` ファイルを作成し、以下の環境変数を設定してください（Git管理対象外）。
+`.env` ファイルを作成し、以下の環境変数を設定してください（Git管理対象外）。`GEMINI_API_KEY` のみが設定されている場合は自動で `gemini` プロバイダが選択されます。
 ```env
+# LLMプロバイダ設定 (gemini / bedrock / mock)
+LLM_PROVIDER=gemini
+
+# Google Gemini API を使用する場合
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+# AWS Bedrock を使用する場合
 AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=amazon.nova-lite-v1:0
+
+# Slack Webhook
 SLACK_REVIEW_WEBHOOK_URL=https://hooks.slack.com/services/...
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
@@ -37,13 +47,15 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 # モックモードで収集〜#news-review へ下書き投稿
 uv run python main.py run --mock
 
-# 本番Bedrockで収集〜#news-review へ下書き投稿
-uv run python main.py run
+# Gemini API / Bedrock で収集〜#news-review へ下書き投稿
+uv run python main.py run --provider gemini
+uv run python main.py run --provider bedrock
 
 # 確認済み下書きを受講生チャンネル (#ai-news) へ本配信
 uv run python main.py publish
 
-# 評価用記事セットの保存と比較評価
+# 評価用記事セットの保存と比較評価（Gemini / Bedrock）
+uv run python main.py evaluate --save --provider gemini --models gemini-3.5-flash-lite gemini-3.8-flash
 uv run python main.py evaluate --save --mock
 
 # ユニットテストの実行
@@ -51,7 +63,7 @@ uv run python -m pytest
 ```
 
 #### 3. 定期実行（GitHub Actions / cron）
-- **GitHub Actions**: `.github/workflows/daily_digest.yml` により毎日 08:00 JST（UTC `23:00`）に自動実行されます（`workflow_dispatch` による手動実行も可能）。リポジトリの Secrets に `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SLACK_REVIEW_WEBHOOK_URL`, `SLACK_WEBHOOK_URL` を登録してください。
+- **GitHub Actions**: `.github/workflows/daily_digest.yml` により毎日 08:00 JST（UTC `23:00`）に自動実行されます（`workflow_dispatch` による手動実行も可能）。リポジトリの Secrets に `LLM_PROVIDER`, `GEMINI_API_KEY`（または `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`）, `SLACK_REVIEW_WEBHOOK_URL`, `SLACK_WEBHOOK_URL` を登録してください。
 - **ローカル cron**: 例として毎日朝8時に実行する場合:
   ```cron
   0 8 * * * cd /path/to/aie-news-curator && uv run python main.py run >> logs/cron.log 2>&1

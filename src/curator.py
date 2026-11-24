@@ -1,4 +1,4 @@
-"""LLM curator module using Amazon Bedrock Converse API (or mock mode)."""
+"""LLM curator module supporting Google Gemini API, Amazon Bedrock, and mock mode."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ from typing import Any
 import boto3
 import yaml
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 
 from src.collector import ArticleMetadata
@@ -26,6 +28,7 @@ DEFAULT_LECTURES_DETAIL_PATH = (
     Path(__file__).resolve().parent.parent / "data" / "lectures_detail.json"
 )
 DEFAULT_MODEL_ID = "amazon.nova-lite-v1:0"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_REGION = "us-east-1"
 
 
@@ -53,6 +56,20 @@ class CuratedArticle(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     latency_ms: float = 0.0
+
+
+def resolve_provider(provider: str | None = None, mock: bool | None = None) -> str:
+    """Resolve LLM provider ('mock', 'gemini', or 'bedrock') from args and env vars."""
+    if mock is True or os.getenv("USE_MOCK_LLM", "").strip().lower() in {"1", "true", "yes"}:
+        return "mock"
+    if provider and provider.strip():
+        return provider.strip().lower()
+    env_provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if env_provider:
+        return env_provider
+    if os.getenv("GEMINI_API_KEY", "").strip() and not os.getenv("AWS_ACCESS_KEY_ID", "").strip():
+        return "gemini"
+    return "bedrock"
 
 
 def _load_external_lecture_details(detail_path: Path) -> dict[str, dict[str, Any]]:
@@ -114,7 +131,11 @@ def format_lectures_context(lectures: list[dict[str, Any]]) -> str:
         if lec.get("details"):
             block.append(f"- 講義詳細: {lec['details']}")
         if lec.get("exercises"):
-            ex = ", ".join(map(str, lec["exercises"])) if isinstance(lec["exercises"], list) else str(lec["exercises"])
+            ex = (
+                ", ".join(map(str, lec["exercises"]))
+                if isinstance(lec["exercises"], list)
+                else str(lec["exercises"])
+            )
             block.append(f"- 演習テーマ: {ex}")
         lines.append("\n".join(block))
     return "\n\n".join(lines)
@@ -124,14 +145,21 @@ def build_curation_prompt(
     article: ArticleMetadata,
     lectures: list[dict[str, Any]],
     related_articles: list[RelatedArticleRef] | None = None,
+    use_tool_instruction: bool = True,
 ) -> str:
-    """Build the user prompt instructing Bedrock to map article concepts to lecture topics."""
+    """Build the user prompt instructing the LLM to map article concepts to lecture topics."""
     lectures_text = format_lectures_context(lectures)
     summary_text = article.summary or "(概要なし)"
     related_text = ""
     if related_articles:
         refs = ", ".join(f"{r.source} ({r.title})" for r in related_articles)
         related_text = f"\n- 関連報道（同一トピック統合）: {refs}"
+
+    output_note = (
+        "必ずツール `submit_curation` を呼び出して構造化JSONとして回答してください。"
+        if use_tool_instruction
+        else "指定されたJSONスキーマに従って構造化JSONのみで回答してください。"
+    )
 
     return (
         "あなたはAIエンジニア育成講座（AIE）の受講生向けニュースキュレーターです。\n"
@@ -150,7 +178,7 @@ def build_curation_prompt(
         "- summary_ja: 150文字程度のわかりやすい日本語要約（記事本文の転載は禁止）。\n"
         "- learning_point: 記事の技術要素が講義のどの概念・キーワード・応用例に対応するかを明示した解説。\n"
         "- discussion_prompt: 受講生同士がSlackで議論したくなる短い問いかけ。\n"
-        "必ずツール `submit_curation` を呼び出して構造化JSONとして回答してください。"
+        f"{output_note}"
     )
 
 
@@ -263,43 +291,137 @@ def _mock_curate(
     )
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Return True if an exception indicates a 429 / RESOURCE_EXHAUSTED rate limit."""
+    msg = str(exc).lower()
+    return "429" in msg or "resource_exhausted" in msg or "rate limit" in msg
+
+
+def _curate_with_gemini(
+    article: ArticleMetadata,
+    lecture_list: list[dict[str, Any]],
+    model_id: str,
+    gemini_client: Any | None = None,
+    related_articles: list[RelatedArticleRef] | None = None,
+    max_retries: int = 3,
+    retry_backoff: float = 2.0,
+) -> tuple[CurationResult, int, int]:
+    """Call Google Gemini API with structured output and 429 retry handling."""
+    client = gemini_client or genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    prompt = build_curation_prompt(
+        article,
+        lecture_list,
+        related_articles=related_articles,
+        use_tool_instruction=False,
+    )
+    # Do not pass temperature (deprecated on Gemini 3.6+)
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=CurationResult,
+    )
+
+    last_exc: Exception | None = None
+    response: Any = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model_id,
+                contents=prompt,
+                config=config,
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            if _is_rate_limit_error(exc) and attempt < max_retries:
+                wait_sec = retry_backoff * (2**attempt)
+                logger.warning("Gemini 429 rate limit hit; retrying in %.1fs...", wait_sec)
+                time.sleep(wait_sec)
+                continue
+            raise
+    else:  # pragma: no cover - defensive
+        if last_exc:
+            raise last_exc
+
+    parsed = getattr(response, "parsed", None)
+    if isinstance(parsed, CurationResult):
+        curation = parsed
+    elif isinstance(parsed, dict):
+        curation = CurationResult.model_validate(parsed)
+    else:
+        curation = CurationResult.model_validate_json(response.text)
+
+    if related_articles:
+        curation.related_articles = related_articles
+
+    usage = getattr(response, "usage_metadata", None)
+    in_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+    out_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+    return curation, in_tokens, out_tokens
+
+
 def curate_article(
     article: ArticleMetadata,
     lectures: list[dict[str, Any]] | None = None,
     model_id: str | None = None,
     mock: bool | None = None,
+    provider: str | None = None,
     bedrock_client: Any | None = None,
+    gemini_client: Any | None = None,
     related_articles: list[RelatedArticleRef] | None = None,
 ) -> CuratedArticle:
-    """Curate a single article via Amazon Bedrock Converse API or mock mode."""
+    """Curate a single article via Gemini API, Amazon Bedrock, or mock mode."""
     lecture_list = lectures if lectures is not None else load_lectures_config()
-    resolved_model_id = model_id or os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
-    use_mock = (
-        mock
-        if mock is not None
-        else os.getenv("USE_MOCK_LLM", "").strip().lower() in {"1", "true", "yes"}
-    )
+    resolved_provider = resolve_provider(provider=provider, mock=mock)
 
     start = time.perf_counter()
-    if use_mock:
+    if resolved_provider == "mock":
+        resolved_model = model_id or os.getenv("GEMINI_MODEL") or os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
         curation = _mock_curate(article, lecture_list, related_articles=related_articles)
         elapsed_ms = (time.perf_counter() - start) * 1000
         return CuratedArticle(
             article=article,
             curation=curation,
-            model_id=f"{resolved_model_id} (mock)",
+            model_id=f"{resolved_model} (mock)",
             input_tokens=0,
             output_tokens=0,
             latency_ms=round(elapsed_ms, 2),
         )
 
+    if resolved_provider == "gemini":
+        resolved_model = model_id or os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        curation, in_tokens, out_tokens = _curate_with_gemini(
+            article=article,
+            lecture_list=lecture_list,
+            model_id=resolved_model,
+            gemini_client=gemini_client,
+            related_articles=related_articles,
+        )
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        return CuratedArticle(
+            article=article,
+            curation=curation,
+            model_id=resolved_model,
+            input_tokens=in_tokens,
+            output_tokens=out_tokens,
+            latency_ms=round(elapsed_ms, 2),
+        )
+
+    if resolved_provider != "bedrock":
+        raise ValueError(f"Unsupported LLM_PROVIDER: {resolved_provider}")
+
+    resolved_model = model_id or os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
     client = bedrock_client or boto3.client(
         "bedrock-runtime",
         region_name=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or DEFAULT_REGION,
     )
-    prompt = build_curation_prompt(article, lecture_list, related_articles=related_articles)
+    prompt = build_curation_prompt(
+        article,
+        lecture_list,
+        related_articles=related_articles,
+        use_tool_instruction=True,
+    )
     response = client.converse(
-        modelId=resolved_model_id,
+        modelId=resolved_model,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         toolConfig=_curation_tool_config(),
         inferenceConfig={"maxTokens": 1024, "temperature": 0.2},
@@ -313,7 +435,7 @@ def curate_article(
     return CuratedArticle(
         article=article,
         curation=curation,
-        model_id=resolved_model_id,
+        model_id=resolved_model,
         input_tokens=int(usage.get("inputTokens", 0)),
         output_tokens=int(usage.get("outputTokens", 0)),
         latency_ms=round(elapsed_ms, 2),
@@ -326,12 +448,22 @@ def curate_articles(
     detail_path: Path | str | None = DEFAULT_LECTURES_DETAIL_PATH,
     model_id: str | None = None,
     mock: bool | None = None,
+    provider: str | None = None,
     bedrock_client: Any | None = None,
+    gemini_client: Any | None = None,
     deduplicate_topics: bool = True,
     similarity_threshold: float = 0.30,
+    request_delay: float | None = None,
 ) -> list[CuratedArticle]:
     """Cluster similar articles (O-4), curate each topic, and sort by relevance_score descending."""
     lectures = load_lectures_config(lectures_path, detail_path=detail_path)
+    resolved_provider = resolve_provider(provider=provider, mock=mock)
+    delay = (
+        request_delay
+        if request_delay is not None
+        else float(os.getenv("GEMINI_REQUEST_DELAY", "1.5"))
+    )
+
     clusters = (
         cluster_similar_articles(articles, threshold=similarity_threshold)
         if deduplicate_topics
@@ -339,14 +471,18 @@ def curate_articles(
     )
 
     results: list[CuratedArticle] = []
-    for cluster in clusters:
+    for idx, cluster in enumerate(clusters):
+        if resolved_provider == "gemini" and idx > 0 and delay > 0:
+            time.sleep(delay)
         try:
             curated = curate_article(
                 article=cluster.representative,
                 lectures=lectures,
                 model_id=model_id,
                 mock=mock,
+                provider=provider,
                 bedrock_client=bedrock_client,
+                gemini_client=gemini_client,
                 related_articles=cluster.related_articles,
             )
             results.append(curated)

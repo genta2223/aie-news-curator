@@ -1,4 +1,4 @@
-"""Evaluation module for comparing filter reduction and Bedrock model performance."""
+"""Evaluation module for comparing filter reduction and LLM model performance."""
 
 from __future__ import annotations
 
@@ -16,12 +16,21 @@ from src.collector import (
     filter_and_deduplicate,
     load_sources_config,
 )
-from src.curator import CuratedArticle, curate_articles
+from src.curator import CuratedArticle, curate_articles, resolve_provider
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_EVAL_PATH = Path(__file__).resolve().parent.parent / "data" / "eval_articles.json"
-DEFAULT_COMPARE_MODELS = ["amazon.nova-micro-v1:0", "amazon.nova-lite-v1:0"]
+DEFAULT_BEDROCK_MODELS = ["amazon.nova-micro-v1:0", "amazon.nova-lite-v1:0"]
+DEFAULT_GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash"]
+
+
+def get_default_compare_models(provider: str | None = None) -> list[str]:
+    """Return default model comparison pair for the resolved provider."""
+    resolved = resolve_provider(provider=provider)
+    if resolved == "gemini":
+        return list(DEFAULT_GEMINI_MODELS)
+    return list(DEFAULT_BEDROCK_MODELS)
 
 
 def save_eval_dataset(
@@ -123,17 +132,18 @@ def run_evaluation(
     models: list[str] | None = None,
     limit: int = 5,
     mock: bool | None = None,
+    provider: str | None = None,
 ) -> dict[str, Any]:
     """Run comparative evaluation across models on the fixed article dataset."""
     dataset = load_eval_dataset(dataset_path)
     articles = [ArticleMetadata.model_validate(item) for item in dataset.get("articles", [])][:limit]
-    target_models = models or DEFAULT_COMPARE_MODELS
+    target_models = models or get_default_compare_models(provider=provider)
 
     runs: dict[str, list[CuratedArticle]] = {}
     summaries: dict[str, dict[str, Any]] = {}
 
     for model_id in target_models:
-        curated = curate_articles(articles, model_id=model_id, mock=mock)
+        curated = curate_articles(articles, model_id=model_id, mock=mock, provider=provider)
         runs[model_id] = curated
         summaries[model_id] = summarize_model_run(curated)
 
