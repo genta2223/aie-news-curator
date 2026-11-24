@@ -111,12 +111,14 @@ def cluster_similar_articles(
                 placed = True
                 break
             if compute_article_similarity(rep, article) >= threshold:
-                existing_urls = {rep.url} | {ref.url for ref in cluster.related_articles}
-                if article.url not in existing_urls:
+                rep_url = rep.url.strip()
+                existing_urls = {rep_url} | {ref.url.strip() for ref in cluster.related_articles}
+                art_url = article.url.strip()
+                if art_url and art_url not in existing_urls:
                     cluster.related_articles.append(
                         RelatedArticleRef(
                             source=article.source,
-                            url=article.url,
+                            url=art_url,
                             title=article.title,
                         )
                     )

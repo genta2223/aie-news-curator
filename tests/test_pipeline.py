@@ -226,6 +226,30 @@ def test_build_slack_blocks_draft_and_publish_and_related_links():
     assert "あわせて読みたい関連記事" in section_text
     assert "<https://itmedia.jp/1|ITmedia AI+>" in section_text
     assert "<https://zenn.dev/1|Zenn LLM>" in section_text
+    assert " / " in section_text
+
+    # Standalone article (or self-referencing related_articles) must NOT render the related line
+    standalone_item = CuratedArticle(
+        article=_make_article(title="Solo Topic", url="https://example.com/solo"),
+        curation=CurationResult(
+            relevance_score=4,
+            related_lecture="Day1: LLM基礎・API・プロンプト設計",
+            summary_ja="単独記事の要約",
+            learning_point="学び",
+            discussion_prompt="問いかけ",
+            related_articles=[
+                RelatedArticleRef(
+                    source="arXiv",
+                    url="https://example.com/solo",
+                    title="Solo Topic",
+                )
+            ],
+        ),
+        model_id="mock",
+    )
+    solo_blocks = build_slack_blocks([standalone_item], publish=False, top_k=5)
+    solo_text = solo_blocks[3]["text"]["text"]
+    assert "あわせて読みたい関連記事" not in solo_text
 
 
 def test_load_enriched_lectures_and_external_detail_json(tmp_path):

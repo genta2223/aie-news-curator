@@ -350,8 +350,10 @@ def _curate_with_gemini(
     else:
         curation = CurationResult.model_validate_json(response.text)
 
-    if related_articles:
-        curation.related_articles = related_articles
+    rep_url = article.url.strip()
+    curation.related_articles = [
+        ref for ref in (related_articles or []) if ref.url.strip() and ref.url.strip() != rep_url
+    ]
 
     usage = getattr(response, "usage_metadata", None)
     in_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
@@ -428,8 +430,10 @@ def curate_article(
     )
     elapsed_ms = (time.perf_counter() - start) * 1000
     curation = parse_converse_response(response)
-    if related_articles:
-        curation.related_articles = related_articles
+    rep_url = article.url.strip()
+    curation.related_articles = [
+        ref for ref in (related_articles or []) if ref.url.strip() and ref.url.strip() != rep_url
+    ]
     usage = response.get("usage", {})
 
     return CuratedArticle(

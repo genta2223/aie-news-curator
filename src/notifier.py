@@ -71,8 +71,16 @@ def build_slack_blocks(
             f"*💡 学びのポイント:*\n{cur.learning_point}\n\n"
             f"*💬 議論の問いかけ:*\n{cur.discussion_prompt}"
         )
-        if cur.related_articles:
-            links = " / ".join(f"<{ref.url}|{ref.source}>" for ref in cur.related_articles)
+        extra_related: list[Any] = []
+        seen_related_urls = {art.url.strip()}
+        for ref in cur.related_articles:
+            ref_url = ref.url.strip()
+            if ref_url and ref_url not in seen_related_urls:
+                seen_related_urls.add(ref_url)
+                extra_related.append(ref)
+
+        if extra_related:
+            links = " / ".join(f"<{ref.url}|{ref.source}>" for ref in extra_related)
             body_text += f"\n\n📎 *あわせて読みたい関連記事:* {links}"
         blocks.append(
             {
