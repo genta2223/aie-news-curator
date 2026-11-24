@@ -1,0 +1,27 @@
+sources:
+  - name: "arXiv (cs.AI+cs.CL+cs.LG)"
+    url: "https://rss.arxiv.org/rss/cs.AI+cs.CL+cs.LG"
+    language: "en"
+    max_items: 15
+  - name: "Hugging Face Blog"
+    url: "https://huggingface.co/blog/feed.xml"
+    language: "en"
+    max_items: 10
+  - name: "Zenn LLM"
+    url: "https://zenn.dev/topics/llm/feed"
+    language: "ja"
+    max_items: 10
+  - name: "ITmedia AI+"
+    url: "https://rss.itmedia.co.jp/rss/2.0/aiplus.xml"
+    language: "ja"
+    max_items: 10
+
+exclude_keywords:
+  - "PR"
+  - "広告"
+  - "ウェビナー"
+  - "イベント告知"
+  - "セミナー開催"
+  - "キャンペーン"
+  - "Sponsored"
+  - "Webinar"

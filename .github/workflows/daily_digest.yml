@@ -1,0 +1,36 @@
+name: Daily AI News Digest
+
+on:
+  schedule:
+    # Run daily at 08:00 JST (23:00 UTC)
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  curate-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run daily news curation (to review channel)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID || 'amazon.nova-lite-v1:0' }}
+          SLACK_REVIEW_WEBHOOK_URL: ${{ secrets.SLACK_REVIEW_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: uv run python main.py run

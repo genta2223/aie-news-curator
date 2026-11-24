@@ -1,0 +1,1 @@
+"""AIE News Curator package."""

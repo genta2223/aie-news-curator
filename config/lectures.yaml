@@ -1,0 +1,103 @@
+lectures:
+  - id: Day1
+    title: "Day1: LLM基礎・API・プロンプト設計"
+    description: "大規模言語モデルの仕組み、トークン・コンテキスト長、API利用、プロンプトエンジニアリング（Zero-shot / Few-shot / CoT / 構造化出力）"
+    keywords:
+      - LLM
+      - Transformer
+      - prompt
+      - プロンプト
+      - structured output
+      - 構造化出力
+      - reasoning
+      - tokenizer
+      - OpenAI
+      - Anthropic
+      - Gemini
+      - Claude
+  - id: Day2
+    title: "Day2: ファインチューニング・LoRA・QLoRA"
+    description: "教師ありファインチューニング（SFT）、PEFT、LoRA / QLoRA、量子化、合成データ作成、DPO・RLHF"
+    keywords:
+      - fine-tuning
+      - ファインチューニング
+      - LoRA
+      - QLoRA
+      - PEFT
+      - SFT
+      - DPO
+      - RLHF
+      - quantization
+      - 量子化
+      - synthetic data
+  - id: Day3
+    title: "Day3: AIエージェント・ツール呼び出し"
+    description: "Function Calling / Tool Use、ReAct、マルチエージェント、メモリ管理、自律型エージェント設計"
+    keywords:
+      - agent
+      - エージェント
+      - tool use
+      - function calling
+      - ReAct
+      - multi-agent
+      - workflow
+      - LangGraph
+      - planning
+  - id: Day4
+    title: "Day4: 評価・Evals・LLM-as-a-Judge"
+    description: "LLMアプリケーションの評価指標、Pass^k、LLM-as-a-Judge、ベンチマーク、回帰テストと安全性評価"
+    keywords:
+      - eval
+      - evaluation
+      - 評価
+      - benchmark
+      - ベンチマーク
+      - LLM-as-a-Judge
+      - Pass@k
+      - Pass^k
+      - hallucination
+      - ハルシネーション
+      - guardrail
+  - id: Day5
+    title: "Day5: RAG・ハイブリッド検索・Tree/GraphRAG"
+    description: "Retrieval-Augmented Generation、埋め込みモデル、ベクトル検索、BM25ハイブリッド検索、リランキング、Tree/GraphRAG"
+    keywords:
+      - RAG
+      - retrieval
+      - embedding
+      - 埋め込み
+      - vector
+      - ベクトル検索
+      - hybrid search
+      - ハイブリッド検索
+      - rerank
+      - GraphRAG
+      - RAPTOR
+  - id: Day6
+    title: "Day6: MCP・権限管理・Browser/Computer Use"
+    description: "Model Context Protocol (MCP)、ツール連携の標準化、認証・権限管理、Browser Use / Computer Use"
+    keywords:
+      - MCP
+      - Model Context Protocol
+      - computer use
+      - browser use
+      - permission
+      - 権限管理
+      - OAuth
+      - sandbox
+      - サンドボックス
+  - id: Day7
+    title: "Day7: クラウド運用・AWS Bedrock"
+    description: "クラウド環境でのLLM運用、Amazon Bedrock、推論最適化、コスト管理、監視・ロギング、CI/CD"
+    keywords:
+      - AWS
+      - Bedrock
+      - Amazon Nova
+      - cloud
+      - クラウド
+      - MLOps
+      - LLMOps
+      - observability
+      - latency
+      - inference
+      - 推論コスト

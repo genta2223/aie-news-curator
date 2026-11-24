@@ -1,0 +1,19 @@
+[project]
+name = "aie-news-curator"
+version = "0.1.0"
+description = "AIE受講生向けニュース共有ツール（PJT03）"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.44.10",
+    "feedparser>=6.0.14",
+    "pydantic>=2.14.4",
+    "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.4",
+    "slack-sdk>=3.48.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
