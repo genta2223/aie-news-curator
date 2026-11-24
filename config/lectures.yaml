@@ -1,12 +1,14 @@
 lectures:
   - id: Day1
     title: "Day1: LLM基礎・API・プロンプト設計"
-    description: "大規模言語モデルの仕組み、トークン・コンテキスト長、API利用、プロンプトエンジニアリング（Zero-shot / Few-shot / CoT / 構造化出力）"
+    summary: "大規模言語モデル（Transformer）の動作原理、トークン・コンテキストウィンドウ、APIパラメータ制御（temperature/max_tokens）、Zero-shot/Few-shot・Chain-of-Thought（CoT）・JSON構造化出力などのプロンプト設計技法を学ぶ。"
     keywords:
       - LLM
       - Transformer
       - prompt
       - プロンプト
+      - Chain-of-Thought
+      - CoT
       - structured output
       - 構造化出力
       - reasoning
@@ -15,9 +17,12 @@ lectures:
       - Anthropic
       - Gemini
       - Claude
+    use_cases:
+      - "構造化出力（JSON Schema）を用いた業務データの自動抽出・分類パイプライン"
+      - "CoTやFew-shotを活用した高精度なカスタマーサポート一次応答・要約生成"
   - id: Day2
     title: "Day2: ファインチューニング・LoRA・QLoRA"
-    description: "教師ありファインチューニング（SFT）、PEFT、LoRA / QLoRA、量子化、合成データ作成、DPO・RLHF"
+    summary: "事前学習済みモデルを特定タスク・ドメインに適応させる教師ありファインチューニング（SFT）、パラメータ効率の良いPEFT（LoRA / QLoRA）、4bit量子化、合成データ生成、DPO/RLHFによるアライメント手法を学ぶ。"
     keywords:
       - fine-tuning
       - ファインチューニング
@@ -29,10 +34,15 @@ lectures:
       - RLHF
       - quantization
       - 量子化
+      - Hugging Face
+      - TRL
       - synthetic data
+    use_cases:
+      - "医療・法務・金融など専門用語が多い社内ドメイン特化モデルの構築"
+      - "SLM（小規模言語モデル）への蒸留・LoRA適用による推論コスト削減とオンプレミス運用"
   - id: Day3
     title: "Day3: AIエージェント・ツール呼び出し"
-    description: "Function Calling / Tool Use、ReAct、マルチエージェント、メモリ管理、自律型エージェント設計"
+    summary: "LLMが外部APIや関数を自律的に呼び出すFunction Calling / Tool Use、思考と行動を反復するReActパターン、計画・反省（Reflection）、マルチエージェント協調、短期・長期メモリ設計を学ぶ。"
     keywords:
       - agent
       - エージェント
@@ -40,12 +50,16 @@ lectures:
       - function calling
       - ReAct
       - multi-agent
-      - workflow
       - LangGraph
       - planning
+      - reflection
+      - memory
+    use_cases:
+      - "社内DB検索・チケット起票・Slack通知を自律的に連携させる運用自動化エージェント"
+      - "調査・実装・レビューを分担するマルチエージェント開発支援ワークフロー"
   - id: Day4
     title: "Day4: 評価・Evals・LLM-as-a-Judge"
-    description: "LLMアプリケーションの評価指標、Pass^k、LLM-as-a-Judge、ベンチマーク、回帰テストと安全性評価"
+    summary: "LLMアプリケーションの品質を定量評価するEvals設計、確率的出力の安定性を測るPass^k指標、LLM-as-a-Judgeによる自動採点、ハルシネーション検知、ガードレールと回帰テスト基盤を学ぶ。"
     keywords:
       - eval
       - evaluation
@@ -58,9 +72,13 @@ lectures:
       - hallucination
       - ハルシネーション
       - guardrail
+      - Ragas
+    use_cases:
+      - "プロンプトやモデル変更時のデグレードを防ぐCI/CD組み込み型自動評価パイプライン"
+      - "RAG回答の根拠整合性（Faithfulness）と安全性を継続監視する品質ゲート"
   - id: Day5
     title: "Day5: RAG・ハイブリッド検索・Tree/GraphRAG"
-    description: "Retrieval-Augmented Generation、埋め込みモデル、ベクトル検索、BM25ハイブリッド検索、リランキング、Tree/GraphRAG"
+    summary: "外部知識を参照して回答精度を高めるRAG（Retrieval-Augmented Generation）、埋め込みモデルとベクトルDB、BM25とのハイブリッド検索、Reranking、階層要約（RAPTOR/TreeRAG）や知識グラフ（GraphRAG）を学ぶ。"
     keywords:
       - RAG
       - retrieval
@@ -68,14 +86,19 @@ lectures:
       - 埋め込み
       - vector
       - ベクトル検索
+      - BM25
       - hybrid search
       - ハイブリッド検索
       - rerank
       - GraphRAG
       - RAPTOR
+      - TreeRAG
+    use_cases:
+      - "社内マニュアル・規程集を横断検索し出典付きで回答する社内ナレッジ検索ボット"
+      - "複雑な文書構造やエンティティ間の関係性を辿るGraphRAGによる技術調査支援"
   - id: Day6
     title: "Day6: MCP・権限管理・Browser/Computer Use"
-    description: "Model Context Protocol (MCP)、ツール連携の標準化、認証・権限管理、Browser Use / Computer Use"
+    summary: "AIと外部ツール・データソースを標準プロトコルで接続するModel Context Protocol（MCP）、OAuthや最小権限の原則に基づくアクセス制御・サンドボックス設計、Browser Use / Computer UseによるGUI操作自動化を学ぶ。"
     keywords:
       - MCP
       - Model Context Protocol
@@ -86,9 +109,13 @@ lectures:
       - OAuth
       - sandbox
       - サンドボックス
+      - Playwright
+    use_cases:
+      - "GitHub・Slack・社内APIをMCPサーバーとして統一接続するセキュアなAIワークスペース"
+      - "API未提供のレガシーWebシステムに対する承認付きBrowser Use自動化"
   - id: Day7
     title: "Day7: クラウド運用・AWS Bedrock"
-    description: "クラウド環境でのLLM運用、Amazon Bedrock、推論最適化、コスト管理、監視・ロギング、CI/CD"
+    summary: "本番環境でのLLM運用（LLMOps）を見据え、Amazon Bedrock（Nova / Claude等）のAPI運用、プロンプトキャッシュやモデル選定によるコスト最適化、レイテンシ改善、CloudWatch等による可観測性・監視を学ぶ。"
     keywords:
       - AWS
       - Bedrock
@@ -101,3 +128,7 @@ lectures:
       - latency
       - inference
       - 推論コスト
+      - GitHub Actions
+    use_cases:
+      - "Amazon Bedrock Nova Micro/Liteの使い分けによるコストと精度を両立したバッチ配信基盤"
+      - "GitHub ActionsとクラウドAPIを組み合わせたサーバーレス定期実行パイプライン"

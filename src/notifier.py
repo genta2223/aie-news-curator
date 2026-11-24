@@ -71,6 +71,9 @@ def build_slack_blocks(
             f"*💡 学びのポイント:*\n{cur.learning_point}\n\n"
             f"*💬 議論の問いかけ:*\n{cur.discussion_prompt}"
         )
+        if cur.related_articles:
+            links = " / ".join(f"<{ref.url}|{ref.source}>" for ref in cur.related_articles)
+            body_text += f"\n\n📎 *あわせて読みたい関連記事:* {links}"
         blocks.append(
             {
                 "type": "section",

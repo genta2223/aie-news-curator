@@ -12,7 +12,8 @@ AIエンジニア育成講座（AIE）の受講生向けに、最新のAI技術�
 
 ### ② 実装した機能の説明
 - **RSS収集・フィルタリング (`src/collector.py`, `config/sources.yaml`)**: `feedparser` を用いて過去48時間以内の記事メタデータ（タイトル・URL・公開日時・RSS概要）を取得し、広告・PR等の除外キーワードフィルタとURL重複排除を行います。
-- **Bedrock構造化キュレーション (`src/curator.py`, `config/lectures.yaml`)**: Amazon Bedrock `converse` API（`toolConfig` による構造化出力、デフォルト `amazon.nova-lite-v1:0`）を使用し、Pydanticモデル `CurationResult`（関連度1〜5、関連講義回、150文字程度の日本語要約、学びのポイント、議論の問いかけ）を生成します。ローカル検証用の `--mock` モードも搭載しています。
+- **重複・類似記事のトピック統合 (`src/deduplicator.py`, 任意要件 O-4)**: タイトルおよびRSS概要文の単語・文字N-gram（CJK 2-gram含む）類似度判定により、同一ニュースを扱う複数メディアの記事を1つの代表トピックに統合し、「あわせて読みたい関連記事」として複数ソースのリンクをまとめて配信します。
+- **講義資料連携 & Bedrock構造化キュレーション (`src/curator.py`, `config/lectures.yaml`)**: Day1〜Day7の「要点・技術用語・実社会での応用例」に加え、外部講義資料JSON（`data/lectures_detail.json`、存在時のみ自動読み込み）をコンテキストへ統合し、Amazon Bedrock `converse` API（`toolConfig` による構造化出力、デフォルト `amazon.nova-lite-v1:0`）で `CurationResult`（関連度1〜5、関連講義回、150文字程度の日本語要約、学びのポイント、議論の問いかけ）を生成します。ローカル検証用の `--mock` モードも搭載しています。
 - **安全設計のSlack Block Kit配信 (`src/notifier.py`)**: 関連度上位5件をSlack Block Kit形式に整形し、デフォルトでは運営確認用チャンネル（`SLACK_REVIEW_WEBHOOK_URL`）へ下書き投稿すると同時に `data/last_digest.json` へ保存します。`publish` コマンド実行時のみ受講生向けチャンネル（`SLACK_WEBHOOK_URL`）へ本配信します。
 - **モデル・プロンプト評価 (`src/evaluator.py`)**: 固定記事セットを `data/eval_articles.json` に保存し、除外フィルタ削減率やモデル間（`amazon.nova-micro-v1:0` vs `amazon.nova-lite-v1:0`）の関連講義一致率・スコア分布・トークン数・処理時間を比較レポート出力します。
 
@@ -66,5 +67,6 @@ uv run python -m pytest
 
 ### ⑤ 特に評価してほしいポイント
 1. **誤配信を防ぐ2段階承認フロー**: `run` で必ず `#news-review` へ下書き投稿し、`data/last_digest.json` を経由して `publish` で受講生チャンネルへ配信する安全な運用設計。
-2. **定量的なモデル評価基盤**: `src/evaluator.py` により、除外フィルタによる削減率や `Nova Micro` vs `Nova Lite` の関連講義一致率・トークンコスト・レイテンシを同一データセットで客観比較できる点。
-3. **著作権・セキュリティの徹底**: スクレイピング禁止、`.env` やローカルキャッシュ（`data/`）の `.gitignore` 除外、Apache License 2.0 の同梱、モックモードを含むユニットテスト完備。
+2. **トピック統合（O-4）と講義資料連携による関連付け精度向上**: 複数メディアの類似記事をクラスタリングして「あわせて読みたい関連記事」として集約し、構造化カリキュラム（＋任意の外部講義JSON）と記事の技術要素を具体的に紐づけて解説する点。
+3. **定量的なモデル評価基盤**: `src/evaluator.py` により、除外フィルタによる削減率や `Nova Micro` vs `Nova Lite` の関連講義一致率・トークンコスト・レイテンシを同一データセットで客観比較できる点。
+4. **著作権・セキュリティの徹底**: スクレイピング禁止、`.env` やローカルキャッシュ（`data/`）の `.gitignore` 除外、Apache License 2.0 の同梱、モックモードを含むユニットテスト完備。

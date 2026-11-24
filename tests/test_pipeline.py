@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -16,7 +17,16 @@ from src.collector import (
     filter_and_deduplicate,
     is_excluded,
 )
-from src.curator import CurationResult, CuratedArticle, curate_article, parse_converse_response
+from src.curator import (
+    CurationResult,
+    CuratedArticle,
+    build_curation_prompt,
+    curate_article,
+    curate_articles,
+    load_lectures_config,
+    parse_converse_response,
+)
+from src.deduplicator import RelatedArticleRef, cluster_similar_articles
 from src.notifier import build_slack_blocks
 
 
@@ -124,16 +134,66 @@ def test_curate_article_mock_mode():
     assert "(mock)" in result.model_id
 
 
-def test_build_slack_blocks_draft_and_publish_and_limit():
+def test_cluster_similar_articles_merges_same_topic():
+    art_en = _make_article(
+        title="OpenAI releases GPT-5 reasoning model",
+        url="https://openai.com/blog/gpt-5",
+        source="OpenAI Blog",
+        summary="GPT-5 improves reasoning and tool use.",
+    )
+    art_ja = _make_article(
+        title="OpenAIが新推論モデルGPT-5を発表、ツール利用を強化",
+        url="https://itmedia.co.jp/gpt-5",
+        source="ITmedia AI+",
+        summary="OpenAIはGPT-5を公開した。",
+    )
+    art_other = _make_article(
+        title="QLoRA quantization benchmark for Japanese LLMs",
+        url="https://zenn.dev/qlora",
+        source="Zenn LLM",
+        summary="4bit quantization experiments on local GPUs.",
+    )
+
+    clusters = cluster_similar_articles([art_en, art_ja, art_other])
+    assert len(clusters) == 2
+    assert clusters[0].representative.url == "https://openai.com/blog/gpt-5"
+    assert len(clusters[0].related_articles) == 1
+    assert clusters[0].related_articles[0].source == "ITmedia AI+"
+    assert clusters[0].related_articles[0].url == "https://itmedia.co.jp/gpt-5"
+
+    curated = curate_articles([art_en, art_ja, art_other], mock=True)
+    assert len(curated) == 2
+    merged_item = next(c for c in curated if c.article.url == "https://openai.com/blog/gpt-5")
+    assert len(merged_item.curation.related_articles) == 1
+
+
+def test_build_slack_blocks_draft_and_publish_and_related_links():
     curated_items = []
     for i in range(7):
         art = _make_article(title=f"Article {i}", url=f"https://example.com/{i}")
+        related = (
+            [
+                RelatedArticleRef(
+                    source="ITmedia AI+",
+                    url="https://itmedia.example.com/related",
+                    title="Related",
+                ),
+                RelatedArticleRef(
+                    source="Zenn LLM",
+                    url="https://zenn.example.com/related",
+                    title="Related 2",
+                ),
+            ]
+            if i == 6
+            else []
+        )
         cur = CurationResult(
             relevance_score=min(5, 1 + (i % 5)),
             related_lecture="Day5: RAG・ハイブリッド検索・Tree/GraphRAG",
             summary_ja=f"要約 {i}",
             learning_point=f"学び {i}",
             discussion_prompt=f"問いかけ {i}",
+            related_articles=related,
         )
         curated_items.append(CuratedArticle(article=art, curation=cur, model_id="mock"))
 
@@ -142,5 +202,56 @@ def test_build_slack_blocks_draft_and_publish_and_limit():
     section_blocks = [b for b in draft_blocks if b["type"] == "section"]
     assert len(section_blocks) == 5
 
-    pub_blocks = build_slack_blocks(curated_items, publish=True, top_k=5)
-    assert "運営確認用下書き" not in pub_blocks[0]["text"]["text"]
+    # Item 6 has score 2, so ensure a high-score item with related_articles renders links
+    high_score_item = CuratedArticle(
+        article=_make_article(title="Top Topic", url="https://example.com/top"),
+        curation=CurationResult(
+            relevance_score=5,
+            related_lecture="Day5: RAG・ハイブリッド検索・Tree/GraphRAG",
+            summary_ja="要約",
+            learning_point="学び",
+            discussion_prompt="問いかけ",
+            related_articles=[
+                RelatedArticleRef(source="ITmedia AI+", url="https://itmedia.jp/1", title="R1"),
+                RelatedArticleRef(source="Zenn LLM", url="https://zenn.dev/1", title="R2"),
+            ],
+        ),
+        model_id="mock",
+    )
+    blocks_with_links = build_slack_blocks([high_score_item], publish=True, top_k=5)
+    assert "運営確認用下書き" not in blocks_with_links[0]["text"]["text"]
+    section_text = blocks_with_links[3]["text"]["text"]
+    assert "あわせて読みたい関連記事" in section_text
+    assert "<https://itmedia.jp/1|ITmedia AI+>" in section_text
+    assert "<https://zenn.dev/1|Zenn LLM>" in section_text
+
+
+def test_load_enriched_lectures_and_external_detail_json(tmp_path):
+    # Fallback when external detail JSON does not exist
+    lectures = load_lectures_config(detail_path=tmp_path / "nonexistent.json")
+    assert len(lectures) == 7
+    assert "summary" in lectures[0]
+    assert "use_cases" in lectures[0]
+
+    # Merging external lectures_detail.json when present
+    detail_file = tmp_path / "lectures_detail.json"
+    detail_file.write_text(
+        json.dumps(
+            {
+                "Day5": {
+                    "details": "BM25と密ベクトルのRRF統合およびRAPTOR階層要約の実装詳細。",
+                    "exercises": ["Hybrid RAG構築演習", "Reranker評価"],
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    enriched = load_lectures_config(detail_path=detail_file)
+    day5 = next(lec for lec in enriched if lec["id"] == "Day5")
+    assert "RRF統合" in day5["details"]
+    assert "Hybrid RAG構築演習" in day5["exercises"]
+
+    prompt = build_curation_prompt(_make_article(), enriched)
+    assert "RRF統合" in prompt
+    assert "Hybrid RAG構築演習" in prompt
